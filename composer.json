@@ -1,0 +1,22 @@
+{
+	"name": "dd32/actionscheduler-back-to-basic-cron",
+	"description": "Makes Action Scheduler schedule each action as a standalone WP-Cron event, so runners like Cavalcade can dispatch actions one-per-event.",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=7.4"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^9.6",
+		"yoast/phpunit-polyfills": "^2.0"
+	},
+	"scripts": {
+		"test": "phpunit",
+		"test:env": "wp-env run tests-cli --env-cwd=wp-content/plugins/actionscheduler-back-to-basic-cron phpunit"
+	},
+	"config": {
+		"allow-plugins": {
+			"composer/installers": true
+		}
+	}
+}
