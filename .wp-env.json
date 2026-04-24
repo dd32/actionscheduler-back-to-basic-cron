@@ -8,8 +8,5 @@
 		"WP_DEBUG": true,
 		"WP_DEBUG_LOG": true,
 		"DISABLE_WP_CRON": true
-	},
-	"mappings": {
-		"wp-content/mu-plugins/disable-cron.php": "./.wp-env/mu-disable-cron.php"
 	}
 }
