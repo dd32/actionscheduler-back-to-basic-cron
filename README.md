@@ -1,6 +1,6 @@
 # Action Scheduler: Back to Basic Cron
 
-A WordPress plugin that makes [Action Scheduler](https://actionscheduler.org/) schedule each action as its own WP-Cron event, instead of polling a queue every minute.
+A WordPress plugin that makes [Action Scheduler](https://actionscheduler.org/) schedule each action as its own WP-Cron event, instead of running its own queue and ticking a once-a-minute polling job on every site — load that compounds across a Multisite network and overwhelms external cron runners like [Cavalcade](https://github.com/humanmade/Cavalcade).
 
 No options. No UI. Activate it and forget it.
 
