@@ -33,9 +33,13 @@ class Plugin {
 		return self::$instance;
 	}
 
+	/** Per-site option flag set once we've backfilled WP-Cron events for existing pending actions. */
+	const SYNCED_OPTION = 'actionscheduler_back_to_basic_cron_synced';
+
 	public function init() {
 		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
 		add_action( 'init', array( $this, 'cleanup_default_cron' ), 2 );
+		add_action( 'action_scheduler_init', array( $this, 'maybe_initial_sync' ), 100 );
 
 		add_action( 'action_scheduler_stored_action', array( $this, 'on_stored_action' ) );
 		add_action( 'action_scheduler_canceled_action', array( $this, 'on_removed_action' ) );
@@ -133,14 +137,21 @@ class Plugin {
 	}
 
 	/**
-	 * Activation: detach the default runner and schedule cron events for existing actions.
+	 * One-shot per-site backfill: runs sync_pending_actions() once per site and remembers it.
+	 *
+	 * This replaces register_activation_hook because that hook doesn't fire for mu-plugins, and
+	 * for Network Activate it only fires once in the network admin context — neither of which
+	 * is enough to backfill an existing AS queue across a Multisite network. Hooking
+	 * action_scheduler_init runs once per site on its first request after install, which is
+	 * what we actually want.
 	 */
-	public function on_activation() {
-		$this->cleanup_default_cron();
+	public function maybe_initial_sync() {
+		if ( get_option( self::SYNCED_OPTION ) ) {
+			return;
+		}
 		$this->sync_pending_actions();
+		update_option( self::SYNCED_OPTION, 1 );
 	}
 }
 
 Plugin::instance()->init();
-
-register_activation_hook( __FILE__, array( Plugin::instance(), 'on_activation' ) );

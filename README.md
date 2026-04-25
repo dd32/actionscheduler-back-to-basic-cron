@@ -17,6 +17,17 @@ But if you're running a **reliable, externally-driven cron system** — for exam
 - You also pay a runner-of-runners tax: Cavalcade fires a worker every minute, the worker boots WordPress just to ask AS "anything to do?", AS says no, the worker exits. That's a wasted process every minute on every site.
 - And if AS *does* have work, the in-process batch can drag on, blocking that Cavalcade slot.
 
+## By the numbers
+
+Take a WordPress Multisite of **1,000 sites**, each running a single hourly Action Scheduler job.
+
+| Setup | Cron events Cavalcade dispatches per hour | Of those, doing real work |
+|---|---:|---:|
+| Default Action Scheduler | **60,000** (per-minute poll × 60 minutes × 1,000 sites) | 1,000 |
+| With this plugin | **1,000** (one event per scheduled action, fired at its due time) | 1,000 |
+
+A 60× reduction in dispatched events, and over 98% of what the default runner fires under that load is pure overhead — Cavalcade boots WordPress just for Action Scheduler to look at an empty queue and exit. Multiply by however many AS jobs are actually in flight (a single active WooCommerce site easily has dozens) and the gap widens. With this plugin, cron load scales with the *jobs you actually need to run*, not with the size of your network.
+
 ## What this plugin does
 
 It removes Action Scheduler's periodic queue runner entirely and replaces it with one-shot WP-Cron events — one per pending action, scheduled at the action's actual due time.
@@ -35,9 +46,11 @@ Recurring actions, both fixed-interval (`as_schedule_recurring_action`) and cron
 
 ## Installation
 
-Drop this plugin in `wp-content/plugins/` and activate it. Action Scheduler must already be present (either as a standalone plugin or bundled by WooCommerce / another consumer).
+Install this plugin **network-wide**, or — preferably — as an mu-plugin. Action Scheduler runs per-site, so the queue-runner replacement has to be active on every site in your network; activating it on a single Multisite site leaves the others polling.
 
-There is nothing to configure.
+The simplest deployment is to drop `actionscheduler-back-to-basic-cron.php` straight into `wp-content/mu-plugins/` (no activation step, always loaded). Alternatively, place it in `wp-content/plugins/` and Network Activate. On first request to each site the plugin backfills WP-Cron events for any AS actions already in the queue, so switchover is automatic on every install path.
+
+Action Scheduler must already be present (either standalone or bundled by WooCommerce / another consumer). There is nothing to configure.
 
 ## When *not* to use this
 
@@ -63,7 +76,7 @@ composer install
 composer test
 ```
 
-The test suite covers: the default runner being unhooked, single actions producing WP-Cron events, past-due timestamps being floored to "now", cancellation / deletion / completion clearing the event, the cron callback actually executing the AS action and marking it complete, fixed-interval recurring actions self-propagating into WP-Cron, cron-expression recurring actions doing the same, and activation backfilling cron events for pre-existing pending actions.
+The test suite covers: the default runner being unhooked, single actions producing WP-Cron events, past-due timestamps being floored to "now", cancellation / deletion / completion clearing the event, the cron callback actually executing the AS action and marking it complete, fixed-interval recurring actions self-propagating into WP-Cron, cron-expression recurring actions doing the same, the per-site initial sync running exactly once, and a manual `sync_pending_actions()` backfill.
 
 ## License
 

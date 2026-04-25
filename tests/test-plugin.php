@@ -27,6 +27,8 @@ class Test_Plugin extends WP_UnitTestCase {
 			ActionScheduler::store()->delete_action( (int) $id );
 		}
 
+		delete_option( Plugin::SYNCED_OPTION );
+
 		// Apply cleanup explicitly — in the test harness init has already fired.
 		Plugin::instance()->cleanup_default_cron();
 	}
@@ -185,6 +187,33 @@ class Test_Plugin extends WP_UnitTestCase {
 		);
 
 		remove_action( $hook, $callback );
+	}
+
+	public function test_maybe_initial_sync_runs_once_per_site() {
+		$hook      = 'abbtc_initial_' . wp_generate_password( 6, false );
+		$action_id = as_schedule_single_action( time() + 900, $hook );
+
+		// Simulate the mu-plugin / Network Activate scenario: the plugin starts running over an
+		// existing AS queue with no WP-Cron events scheduled and no synced flag set.
+		wp_clear_scheduled_hook( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		delete_option( Plugin::SYNCED_OPTION );
+		$this->assertFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+
+		Plugin::instance()->maybe_initial_sync();
+
+		$this->assertNotFalse(
+			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			'First call should backfill cron events for existing pending actions.'
+		);
+		$this->assertSame( '1', (string) get_option( Plugin::SYNCED_OPTION ) );
+
+		// Second call should be a no-op: tear the cron event down again and verify it stays gone.
+		wp_clear_scheduled_hook( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		Plugin::instance()->maybe_initial_sync();
+		$this->assertFalse(
+			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			'Subsequent calls must not re-run the backfill.'
+		);
 	}
 
 	public function test_sync_pending_actions_schedules_cron_events_for_existing_pending() {
