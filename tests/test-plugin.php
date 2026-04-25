@@ -154,6 +154,39 @@ class Test_Plugin extends WP_UnitTestCase {
 		remove_action( $hook, $callback );
 	}
 
+	public function test_cron_expression_action_reschedules_next_instance_as_wp_cron() {
+		$hook     = 'abbtc_cron_' . wp_generate_password( 6, false );
+		$callback = function () {};
+		add_action( $hook, $callback );
+
+		// "every minute" — cron expression scheduling, not fixed interval.
+		$action_id = as_schedule_cron_action( time() - 10, '* * * * *', $hook );
+		$this->assertNotFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+
+		Plugin::instance()->run_action( $action_id );
+
+		$this->assertSame(
+			ActionScheduler_Store::STATUS_COMPLETE,
+			ActionScheduler::store()->get_status( $action_id )
+		);
+
+		$pending = ActionScheduler::store()->query_actions(
+			array(
+				'hook'     => $hook,
+				'status'   => ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => 1,
+			)
+		);
+		$this->assertNotEmpty( $pending, 'Cron-scheduled action should have scheduled a follow-up.' );
+		$next_id = (int) $pending[0];
+		$this->assertNotFalse(
+			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $next_id ) ),
+			'Follow-up cron-scheduled action should have its own WP-Cron event.'
+		);
+
+		remove_action( $hook, $callback );
+	}
+
 	public function test_sync_pending_actions_schedules_cron_events_for_existing_pending() {
 		$hook      = 'abbtc_sync_' . wp_generate_password( 6, false );
 		$action_id = as_schedule_single_action( time() + 900, $hook );
