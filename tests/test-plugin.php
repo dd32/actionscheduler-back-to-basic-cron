@@ -46,6 +46,13 @@ class Test_Plugin extends WP_UnitTestCase {
 		$this->assertFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK ) );
 	}
 
+	public function test_cleanup_callback_is_hooked_to_queue_event() {
+		$this->assertNotFalse(
+			has_action( Plugin::AS_QUEUE_HOOK, array( Plugin::instance(), 'run_cleanup' ) ),
+			'Plugin::run_cleanup should be attached to action_scheduler_run_queue.'
+		);
+	}
+
 	public function test_runner_handler_and_async_dispatch_are_detached_after_init() {
 		// Same late-load scenario: simulate AS::init() invoking Runner::init() directly,
 		// then fire action_scheduler_init (which AS::init() also does in that path).

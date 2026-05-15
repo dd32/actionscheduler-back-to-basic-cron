@@ -19,6 +19,7 @@
 namespace dd32\WordPress\BasicCronForActionScheduler;
 
 use ActionScheduler;
+use ActionScheduler_QueueCleaner;
 use ActionScheduler_Store;
 use Exception;
 
@@ -59,6 +60,7 @@ class Plugin {
 		add_action( 'action_scheduler_completed_action', array( $this, 'on_removed_action' ) );
 
 		add_action( self::RUN_ACTION_HOOK, array( $this, 'run_action' ) );
+		add_action( self::AS_QUEUE_HOOK, array( $this, 'run_cleanup' ) );
 	}
 
 	/**
@@ -101,6 +103,21 @@ class Plugin {
 			return false;
 		}
 		return $pre;
+	}
+
+	/**
+	 * Cleanup-only handler for action_scheduler_run_queue. Replaces the default
+	 * Runner::run() with a callback that only runs AS's queue cleaner: deletes
+	 * old completed actions, marks orphaned claims failed, resets timeouts.
+	 *
+	 * Without this, AS's normal cleanup is never invoked and completed-action
+	 * rows accumulate indefinitely.
+	 */
+	public function run_cleanup() {
+		if ( ! class_exists( 'ActionScheduler' ) ) {
+			return;
+		}
+		( new ActionScheduler_QueueCleaner( ActionScheduler::store() ) )->clean();
 	}
 
 	/**
@@ -185,6 +202,11 @@ class Plugin {
 		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK );
 
 		$this->sync_pending_actions();
+
+		// One-shot cleanup on first install. After this, cleanup only runs if/when
+		// something else fires action_scheduler_run_queue (we don't schedule it).
+		$this->run_cleanup();
+
 		update_option( self::SYNCED_OPTION, 1 );
 	}
 }
