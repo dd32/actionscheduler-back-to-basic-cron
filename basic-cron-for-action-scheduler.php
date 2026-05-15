@@ -140,14 +140,13 @@ class Plugin {
 			return;
 		}
 
-		// Second arg is the AS hook name — purely informational so the event is identifiable
-		// in cron viewers. run_action() ignores it. It's part of the args tuple, so the dedupe
-		// window keys on (action_id, hook_name) — fine, since hook_name is stable per action_id.
-		$args = [ $action_id, (string) $hook_name ];
 		// Clear any prior event for this action (args may differ from current) so reschedules
 		// don't race the 10-minute dupe window.
 		$this->clear_cron_for_action( $action_id );
-		wp_schedule_single_event( max( time(), $timestamp ), self::RUN_ACTION_HOOK, $args );
+
+		// Second arg is the AS hook name — purely informational so the event is identifiable
+		// in cron viewers. run_action() ignores it.
+		wp_schedule_single_event( max( time(), $timestamp ), self::RUN_ACTION_HOOK, [ $action_id, (string) $hook_name ] );
 	}
 
 	/**
