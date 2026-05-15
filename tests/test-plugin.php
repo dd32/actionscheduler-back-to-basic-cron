@@ -31,7 +31,12 @@ class Test_Plugin extends WP_UnitTestCase {
 	}
 
 	public function test_default_queue_event_is_cleared() {
+		// Seed a stale event as if AS had scheduled it before this plugin was installed,
+		// bypassing our own block filter.
+		remove_filter( 'pre_schedule_event', array( Plugin::instance(), 'block_default_queue_schedule' ), 10 );
 		wp_schedule_event( time(), 'hourly', Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) );
+		add_filter( 'pre_schedule_event', array( Plugin::instance(), 'block_default_queue_schedule' ), 10, 2 );
+
 		$this->assertNotFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) ) );
 
 		delete_option( Plugin::SYNCED_OPTION );
