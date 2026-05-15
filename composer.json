@@ -12,7 +12,7 @@
 	},
 	"scripts": {
 		"test": "phpunit",
-		"test:env": "wp-env run tests-cli --env-cwd=wp-content/plugins/basic-cron-for-action-scheduler phpunit"
+		"test:env": "npx wp-env run tests-cli --env-cwd=wp-content/plugins/basic-cron-for-action-scheduler phpunit"
 	},
 	"config": {
 		"allow-plugins": {
