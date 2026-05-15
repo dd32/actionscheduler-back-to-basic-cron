@@ -46,7 +46,9 @@ class Plugin {
 
 	public function init() {
 		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
+		add_action( 'action_scheduler_init', array( $this, 'defang_default_runner' ), 1 );
 		add_action( 'action_scheduler_init', array( $this, 'maybe_initial_sync' ), 100 );
+		add_filter( 'pre_schedule_event', array( $this, 'block_default_queue_schedule' ), 10, 2 );
 
 		add_action( 'action_scheduler_stored_action', array( $this, 'on_stored_action' ) );
 		add_action( 'action_scheduler_canceled_action', array( $this, 'on_removed_action' ) );
@@ -66,6 +68,36 @@ class Plugin {
 			return;
 		}
 		remove_action( 'init', array( ActionScheduler::runner(), 'init' ), 1 );
+	}
+
+	/**
+	 * If Runner::init() managed to run anyway (AS loaded after WP `init`), unwind what
+	 * it did: detach the queue-hook handler and the shutdown async dispatcher. Fires on
+	 * `action_scheduler_init`, which runs after Runner::init() in both AS code paths.
+	 */
+	public function defang_default_runner() {
+		$runner = ActionScheduler::runner();
+		remove_action( self::AS_QUEUE_HOOK, array( $runner, 'run' ) );
+		$runner->unhook_dispatch_async_request();
+	}
+
+	/**
+	 * Block any attempt to schedule the AS periodic queue runner via WP-Cron.
+	 *
+	 * The init-hook removal only catches the path where AS is loaded before WP `init`. When
+	 * a plugin (e.g. WooCommerce) loads its bundled AS from a later hook, AS::init() calls
+	 * Runner::init() directly, which schedules `action_scheduler_run_queue`. This filter
+	 * is the structural defense against any caller — `Runner::init()`, manual code, or a
+	 * future code path — re-creating the periodic event.
+	 *
+	 * @param null|true|\WP_Error $pre   Short-circuit value.
+	 * @param object              $event Event object (->hook is the hook name).
+	 */
+	public function block_default_queue_schedule( $pre, $event ) {
+		if ( isset( $event->hook ) && self::AS_QUEUE_HOOK === $event->hook ) {
+			return false;
+		}
+		return $pre;
 	}
 
 	/**

@@ -41,6 +41,38 @@ class Test_Plugin extends WP_UnitTestCase {
 		$this->assertFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK ) );
 	}
 
+	public function test_runner_handler_and_async_dispatch_are_detached_after_init() {
+		// Same late-load scenario: simulate AS::init() invoking Runner::init() directly,
+		// then fire action_scheduler_init (which AS::init() also does in that path).
+		ActionScheduler::runner()->init();
+		do_action( 'action_scheduler_init' );
+
+		$runner = ActionScheduler::runner();
+		$this->assertFalse(
+			has_action( Plugin::AS_QUEUE_HOOK, array( $runner, 'run' ) ),
+			'AS runner should not be attached to the queue hook.'
+		);
+		$this->assertFalse(
+			has_action( 'shutdown', array( $runner, 'maybe_dispatch_async_request' ) ),
+			'AS shutdown async dispatcher should be unhooked.'
+		);
+	}
+
+	public function test_queue_event_is_blocked_when_runner_init_runs_directly() {
+		// AS::init() calls $runner->init() directly when did_action('init') is already true
+		// (e.g. AS loaded by a plugin from a hook later than `init`). That bypasses our
+		// remove_action() on the init hook, so we need to block the schedule itself.
+		Plugin::instance()->maybe_initial_sync();
+
+		ActionScheduler::runner()->init();
+
+		$this->assertFalse(
+			wp_next_scheduled( Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) ),
+			'Runner::init() should not have been able to schedule the queue event.'
+		);
+		$this->assertFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK ) );
+	}
+
 	public function test_default_runner_init_action_is_unhooked() {
 		// Re-run the disable; subsequent calls should be idempotent.
 		Plugin::instance()->disable_default_runner();
