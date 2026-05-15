@@ -5,6 +5,11 @@
  * @package dd32\WordPress\BasicCronForActionScheduler
  */
 
+$_autoload = dirname( __DIR__ ) . '/vendor/autoload.php';
+if ( file_exists( $_autoload ) ) {
+	require_once $_autoload;
+}
+
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
 if ( ! $_tests_dir ) {
 	$_tests_dir = rtrim( sys_get_temp_dir(), '/\\' ) . '/wordpress-tests-lib';
