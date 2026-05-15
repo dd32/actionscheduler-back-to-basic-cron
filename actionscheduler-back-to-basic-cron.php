@@ -14,12 +14,16 @@
 
 namespace ActionScheduler_Back_To_Basic_Cron;
 
+use ActionScheduler;
+use ActionScheduler_Store;
+use Exception;
+
 defined( 'ABSPATH' ) || exit;
 
 class Plugin {
 
 	/** WP-Cron hook used to run a single Action Scheduler action. */
-	const RUN_ACTION_HOOK = 'actionscheduler_back_to_basic_cron_run_action';
+	const RUN_ACTION_HOOK = 'action_scheduler_run_hook';
 
 	/** WP-Cron hook that Action Scheduler's default runner registers every minute. */
 	const AS_QUEUE_HOOK = 'action_scheduler_run_queue';
@@ -34,7 +38,7 @@ class Plugin {
 	}
 
 	/** Per-site option flag set once we've backfilled WP-Cron events for existing pending actions. */
-	const SYNCED_OPTION = 'actionscheduler_back_to_basic_cron_synced';
+	const SYNCED_OPTION = 'actionscheduler_basic_cron_synced';
 
 	public function init() {
 		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
@@ -55,10 +59,10 @@ class Plugin {
 	 * AS registers this during `plugins_loaded` priority 1, so we run at priority 20.
 	 */
 	public function disable_default_runner() {
-		if ( ! class_exists( '\ActionScheduler' ) ) {
+		if ( ! class_exists( 'ActionScheduler' ) ) {
 			return;
 		}
-		remove_action( 'init', array( \ActionScheduler::runner(), 'init' ), 1 );
+		remove_action( 'init', array( ActionScheduler::runner(), 'init' ), 1 );
 	}
 
 	/**
@@ -69,8 +73,8 @@ class Plugin {
 		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK, array( 'WP Cron' ) );
 		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK );
 
-		if ( class_exists( '\ActionScheduler' ) ) {
-			\ActionScheduler::runner()->unhook_dispatch_async_request();
+		if ( class_exists( 'ActionScheduler' ) ) {
+			ActionScheduler::runner()->unhook_dispatch_async_request();
 		}
 	}
 
@@ -81,14 +85,14 @@ class Plugin {
 	 */
 	public function on_stored_action( $action_id ) {
 		$action_id = (int) $action_id;
-		$store     = \ActionScheduler::store();
+		$store     = ActionScheduler::store();
 
 		try {
-			if ( \ActionScheduler_Store::STATUS_PENDING !== $store->get_status( $action_id ) ) {
+			if ( ActionScheduler_Store::STATUS_PENDING !== $store->get_status( $action_id ) ) {
 				return;
 			}
 			$timestamp = $store->get_date( $action_id )->getTimestamp();
-		} catch ( \Exception $e ) {
+		} catch ( Exception $e ) {
 			return;
 		}
 
@@ -109,10 +113,10 @@ class Plugin {
 	 * Runs a single Action Scheduler action by ID. Invoked by WP-Cron via self::RUN_ACTION_HOOK.
 	 */
 	public function run_action( $action_id ) {
-		if ( ! class_exists( '\ActionScheduler' ) ) {
+		if ( ! class_exists( 'ActionScheduler' ) ) {
 			return;
 		}
-		\ActionScheduler::runner()->process_action( (int) $action_id, 'WP Cron' );
+		ActionScheduler::runner()->process_action( (int) $action_id, 'WP Cron' );
 	}
 
 	/**
@@ -120,13 +124,13 @@ class Plugin {
 	 * existing queues aren't left stranded.
 	 */
 	public function sync_pending_actions() {
-		if ( ! class_exists( '\ActionScheduler' ) ) {
+		if ( ! class_exists( 'ActionScheduler' ) ) {
 			return;
 		}
 
-		$ids = \ActionScheduler::store()->query_actions(
+		$ids = ActionScheduler::store()->query_actions(
 			array(
-				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'status'   => ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
 			)
 		);
