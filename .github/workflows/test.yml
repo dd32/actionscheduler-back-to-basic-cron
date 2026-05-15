@@ -1,0 +1,54 @@
+name: Tests
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream Action Scheduler trunk
+        uses: actions/checkout@v4
+        with:
+          repository: woocommerce/action-scheduler
+          ref: trunk
+          path: ../action-scheduler-upstream
+
+      - name: Move upstream into bootstrap-discoverable location
+        run: mv ../action-scheduler-upstream ../action-scheduler
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+          extensions: mysqli
+
+      - name: Install Subversion
+        run: sudo apt-get update && sudo apt-get install -y subversion
+
+      - name: composer install
+        run: composer install --no-interaction --no-progress
+
+      - name: Install WP test suite
+        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 latest
+
+      - name: Run PHPUnit
+        run: composer test

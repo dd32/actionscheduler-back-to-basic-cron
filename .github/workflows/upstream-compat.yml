@@ -1,0 +1,96 @@
+name: Upstream Action Scheduler compat
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream Action Scheduler trunk
+        uses: actions/checkout@v4
+        with:
+          repository: woocommerce/action-scheduler
+          ref: trunk
+          path: ../action-scheduler-upstream
+
+      - name: Move upstream into bootstrap-discoverable location
+        run: |
+          mv ../action-scheduler-upstream ../action-scheduler
+          cd ../action-scheduler && echo "UPSTREAM_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+          extensions: mysqli
+
+      - name: Install Subversion
+        run: sudo apt-get update && sudo apt-get install -y subversion
+
+      - name: composer install
+        run: composer install --no-interaction --no-progress
+
+      - name: Install WP test suite
+        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 latest
+
+      - name: Run PHPUnit
+        id: phpunit
+        run: composer test
+
+      - name: Open issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = process.env.UPSTREAM_SHA || 'unknown';
+            const short = sha.slice(0, 7);
+            const title = `Upstream compat: action-scheduler trunk @ ${short} breaks tests`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `Daily upstream-compat run failed.`,
+              ``,
+              `- Upstream SHA: \`${sha}\``,
+              `- Workflow run: ${runUrl}`,
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-compat',
+            });
+            const match = existing.data.find(i => i.title === title);
+            if (match) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body: `Still failing on ${new Date().toISOString().slice(0,10)} — ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['upstream-compat', 'bug'],
+              });
+            }
