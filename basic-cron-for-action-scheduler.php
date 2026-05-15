@@ -1,13 +1,17 @@
 <?php
 /**
  * Plugin Name:       Basic Cron for Action Scheduler
+ * Plugin URI:        https://github.com/dd32/basic-cron-for-action-scheduler
  * Description:       Makes Action Scheduler schedule each action as its own WP-Cron event instead of running a periodic queue. Designed to play nicely with Cavalcade.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            dd32
+ * Author URI:        https://github.com/dd32
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * GitHub Plugin URI: https://github.com/dd32/basic-cron-for-action-scheduler
+ * Primary Branch:    trunk
  *
  * @package dd32\WordPress\BasicCronForActionScheduler
  */
