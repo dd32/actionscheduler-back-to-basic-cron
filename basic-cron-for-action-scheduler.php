@@ -46,21 +46,21 @@ class Plugin {
 	const SYNCED_OPTION = 'actionscheduler_basic_cron_synced';
 
 	public function init() {
-		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
-		add_action( 'action_scheduler_init', array( $this, 'defang_default_runner' ), 1 );
-		add_action( 'action_scheduler_init', array( $this, 'maybe_initial_sync' ), 100 );
+		add_action( 'plugins_loaded', [ $this, 'disable_default_runner' ], 20 );
+		add_action( 'action_scheduler_init', [ $this, 'defang_default_runner' ], 1 );
+		add_action( 'action_scheduler_init', [ $this, 'maybe_initial_sync' ], 100 );
 		// Priority 1 so we run before Cavalcade's pre_schedule_event handler (priority 10):
 		// if Cavalcade processed first, it would persist the event to its DB before our
 		// short-circuit could veto it.
-		add_filter( 'pre_schedule_event', array( $this, 'block_default_queue_schedule' ), 1, 2 );
+		add_filter( 'pre_schedule_event', [ $this, 'block_default_queue_schedule' ], 1, 2 );
 
-		add_action( 'action_scheduler_stored_action', array( $this, 'on_stored_action' ) );
-		add_action( 'action_scheduler_canceled_action', array( $this, 'on_removed_action' ) );
-		add_action( 'action_scheduler_deleted_action', array( $this, 'on_removed_action' ) );
-		add_action( 'action_scheduler_completed_action', array( $this, 'on_removed_action' ) );
+		add_action( 'action_scheduler_stored_action', [ $this, 'on_stored_action' ] );
+		add_action( 'action_scheduler_canceled_action', [ $this, 'on_removed_action' ] );
+		add_action( 'action_scheduler_deleted_action', [ $this, 'on_removed_action' ] );
+		add_action( 'action_scheduler_completed_action', [ $this, 'on_removed_action' ] );
 
-		add_action( self::RUN_ACTION_HOOK, array( $this, 'run_action' ) );
-		add_action( self::AS_QUEUE_HOOK, array( $this, 'run_cleanup' ) );
+		add_action( self::RUN_ACTION_HOOK, [ $this, 'run_action' ] );
+		add_action( self::AS_QUEUE_HOOK, [ $this, 'run_cleanup' ] );
 	}
 
 	/**
@@ -72,7 +72,7 @@ class Plugin {
 		if ( ! class_exists( 'ActionScheduler' ) ) {
 			return;
 		}
-		remove_action( 'init', array( ActionScheduler::runner(), 'init' ), 1 );
+		remove_action( 'init', [ ActionScheduler::runner(), 'init' ], 1 );
 	}
 
 	/**
@@ -82,7 +82,7 @@ class Plugin {
 	 */
 	public function defang_default_runner() {
 		$runner = ActionScheduler::runner();
-		remove_action( self::AS_QUEUE_HOOK, array( $runner, 'run' ) );
+		remove_action( self::AS_QUEUE_HOOK, [ $runner, 'run' ] );
 		$runner->unhook_dispatch_async_request();
 	}
 
@@ -133,14 +133,20 @@ class Plugin {
 			if ( ActionScheduler_Store::STATUS_PENDING !== $store->get_status( $action_id ) ) {
 				return;
 			}
-			$timestamp = $store->get_date( $action_id )->getTimestamp();
+			$action    = $store->fetch_action( $action_id );
+			$timestamp = $action->get_schedule()->get_date()->getTimestamp();
+			$hook_name = $action->get_hook();
 		} catch ( Exception $e ) {
 			return;
 		}
 
-		$args = array( $action_id );
-		// Clear first so reschedules don't race the 10-minute dupe window.
-		wp_clear_scheduled_hook( self::RUN_ACTION_HOOK, $args );
+		// Second arg is the AS hook name — purely informational so the event is identifiable
+		// in cron viewers. run_action() ignores it. It's part of the args tuple, so the dedupe
+		// window keys on (action_id, hook_name) — fine, since hook_name is stable per action_id.
+		$args = [ $action_id, (string) $hook_name ];
+		// Clear any prior event for this action (args may differ from current) so reschedules
+		// don't race the 10-minute dupe window.
+		$this->clear_cron_for_action( $action_id );
 		wp_schedule_single_event( max( time(), $timestamp ), self::RUN_ACTION_HOOK, $args );
 	}
 
@@ -148,7 +154,24 @@ class Plugin {
 	 * Callback for canceled / deleted / completed actions — drop the paired WP-Cron event.
 	 */
 	public function on_removed_action( $action_id ) {
-		wp_clear_scheduled_hook( self::RUN_ACTION_HOOK, array( (int) $action_id ) );
+		$this->clear_cron_for_action( (int) $action_id );
+	}
+
+	/**
+	 * Unschedule every WP-Cron event registered against this plugin's RUN_ACTION_HOOK whose
+	 * first arg matches $action_id. Scans the cron array directly because we don't know the
+	 * full args tuple at clear time — `action_scheduler_deleted_action` fires after the row
+	 * is gone, and historical events may have been scheduled with a different args shape.
+	 */
+	private function clear_cron_for_action( int $action_id ) {
+		foreach ( _get_cron_array() as $timestamp => $hooks ) {
+			foreach ( $hooks[ self::RUN_ACTION_HOOK ] ?? [] as $event ) {
+				$args = (array) ( $event['args'] ?? [] );
+				if ( (int) ( $args[0] ?? 0 ) === $action_id ) {
+					wp_unschedule_event( $timestamp, self::RUN_ACTION_HOOK, $args );
+				}
+			}
+		}
 	}
 
 	/**
@@ -171,13 +194,13 @@ class Plugin {
 		}
 
 		$ids = ActionScheduler::store()->query_actions(
-			array(
+			[
 				'status'   => ActionScheduler_Store::STATUS_PENDING,
 				'per_page' => -1,
-			)
+			]
 		);
 
-		foreach ( (array) $ids as $id ) {
+		foreach ( $ids as $id ) {
 			$this->on_stored_action( (int) $id );
 		}
 	}
@@ -198,8 +221,7 @@ class Plugin {
 
 		// Drop any periodic queue event AS had previously scheduled. Once cleared it stays
 		// cleared because disable_default_runner() stops AS re-registering it.
-		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK, array( 'WP Cron' ) );
-		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK );
+		wp_unschedule_hook( self::AS_QUEUE_HOOK );
 
 		$this->sync_pending_actions();
 

@@ -30,6 +30,33 @@ class Test_Plugin extends WP_UnitTestCase {
 		delete_option( Plugin::SYNCED_OPTION );
 	}
 
+	/**
+	 * The WP-Cron event for an AS action is scheduled with args `[action_id, hook_name]`, so
+	 * tests can't look it up with `wp_next_scheduled( ..., [ $action_id ] )` — args have to
+	 * match exactly. These helpers scan the cron array by first-arg instead.
+	 */
+	private function next_cron_for_action( $action_id ) {
+		foreach ( _get_cron_array() as $timestamp => $hooks ) {
+			foreach ( $hooks[ Plugin::RUN_ACTION_HOOK ] ?? [] as $event ) {
+				if ( (int) ( $event['args'][0] ?? 0 ) === (int) $action_id ) {
+					return $timestamp;
+				}
+			}
+		}
+		return false;
+	}
+
+	private function clear_cron_for_action( $action_id ) {
+		foreach ( _get_cron_array() as $timestamp => $hooks ) {
+			foreach ( $hooks[ Plugin::RUN_ACTION_HOOK ] ?? [] as $event ) {
+				$args = (array) ( $event['args'] ?? [] );
+				if ( (int) ( $args[0] ?? 0 ) === (int) $action_id ) {
+					wp_unschedule_event( $timestamp, Plugin::RUN_ACTION_HOOK, $args );
+				}
+			}
+		}
+	}
+
 	public function test_default_queue_event_is_cleared() {
 		// Seed a stale event as if AS had scheduled it before this plugin was installed,
 		// bypassing our own block filter.
@@ -102,7 +129,7 @@ class Test_Plugin extends WP_UnitTestCase {
 		$action_id  = as_schedule_single_action( $target_ts, $hook );
 
 		$this->assertGreaterThan( 0, $action_id );
-		$scheduled = wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		$scheduled = $this->next_cron_for_action( $action_id );
 		$this->assertNotFalse( $scheduled, 'WP-Cron event should exist for the new action.' );
 		$this->assertEqualsWithDelta( $target_ts, $scheduled, 2 );
 	}
@@ -112,7 +139,7 @@ class Test_Plugin extends WP_UnitTestCase {
 		$past_ts   = time() - 3600;
 		$action_id = as_schedule_single_action( $past_ts, $hook );
 
-		$scheduled = wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		$scheduled = $this->next_cron_for_action( $action_id );
 		$this->assertNotFalse( $scheduled );
 		$this->assertGreaterThanOrEqual( time() - 5, $scheduled, 'Event must not be scheduled in the past.' );
 	}
@@ -120,12 +147,12 @@ class Test_Plugin extends WP_UnitTestCase {
 	public function test_canceling_action_removes_wp_cron_event() {
 		$hook      = 'abbtc_cancel_' . wp_generate_password( 6, false );
 		$action_id = as_schedule_single_action( time() + 600, $hook );
-		$this->assertNotFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertNotFalse( $this->next_cron_for_action( $action_id ) );
 
 		ActionScheduler::store()->cancel_action( $action_id );
 
 		$this->assertFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'WP-Cron event should be cleared after cancellation.'
 		);
 	}
@@ -133,11 +160,11 @@ class Test_Plugin extends WP_UnitTestCase {
 	public function test_deleting_action_removes_wp_cron_event() {
 		$hook      = 'abbtc_delete_' . wp_generate_password( 6, false );
 		$action_id = as_schedule_single_action( time() + 600, $hook );
-		$this->assertNotFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertNotFalse( $this->next_cron_for_action( $action_id ) );
 
 		ActionScheduler::store()->delete_action( $action_id );
 
-		$this->assertFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertFalse( $this->next_cron_for_action( $action_id ) );
 	}
 
 	public function test_run_action_processes_the_action_callback() {
@@ -158,7 +185,7 @@ class Test_Plugin extends WP_UnitTestCase {
 			ActionScheduler::store()->get_status( $action_id )
 		);
 		$this->assertFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'The completed-action handler should have cleared the cron event.'
 		);
 
@@ -171,12 +198,12 @@ class Test_Plugin extends WP_UnitTestCase {
 		add_action( $hook, $callback );
 
 		$action_id = as_schedule_recurring_action( time() - 10, 3600, $hook );
-		$this->assertNotFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertNotFalse( $this->next_cron_for_action( $action_id ) );
 
 		Plugin::instance()->run_action( $action_id );
 
 		$this->assertFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'Old recurring action should be complete and unscheduled.'
 		);
 
@@ -191,7 +218,7 @@ class Test_Plugin extends WP_UnitTestCase {
 		$this->assertNotEmpty( $pending, 'Recurring action should have scheduled a follow-up.' );
 		$next_id = (int) $pending[0];
 		$this->assertNotFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $next_id ) ),
+			$this->next_cron_for_action( $next_id ),
 			'Follow-up recurring action should have its own WP-Cron event.'
 		);
 
@@ -205,7 +232,7 @@ class Test_Plugin extends WP_UnitTestCase {
 
 		// "every minute" — cron expression scheduling, not fixed interval.
 		$action_id = as_schedule_cron_action( time() - 10, '* * * * *', $hook );
-		$this->assertNotFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertNotFalse( $this->next_cron_for_action( $action_id ) );
 
 		Plugin::instance()->run_action( $action_id );
 
@@ -224,7 +251,7 @@ class Test_Plugin extends WP_UnitTestCase {
 		$this->assertNotEmpty( $pending, 'Cron-scheduled action should have scheduled a follow-up.' );
 		$next_id = (int) $pending[0];
 		$this->assertNotFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $next_id ) ),
+			$this->next_cron_for_action( $next_id ),
 			'Follow-up cron-scheduled action should have its own WP-Cron event.'
 		);
 
@@ -237,23 +264,23 @@ class Test_Plugin extends WP_UnitTestCase {
 
 		// Simulate the mu-plugin / Network Activate scenario: the plugin starts running over an
 		// existing AS queue with no WP-Cron events scheduled and no synced flag set.
-		wp_clear_scheduled_hook( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		$this->clear_cron_for_action( $action_id );
 		delete_option( Plugin::SYNCED_OPTION );
-		$this->assertFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->assertFalse( $this->next_cron_for_action( $action_id ) );
 
 		Plugin::instance()->maybe_initial_sync();
 
 		$this->assertNotFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'First call should backfill cron events for existing pending actions.'
 		);
 		$this->assertSame( '1', (string) get_option( Plugin::SYNCED_OPTION ) );
 
 		// Second call should be a no-op: tear the cron event down again and verify it stays gone.
-		wp_clear_scheduled_hook( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
+		$this->clear_cron_for_action( $action_id );
 		Plugin::instance()->maybe_initial_sync();
 		$this->assertFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'Subsequent calls must not re-run the backfill.'
 		);
 	}
@@ -263,13 +290,13 @@ class Test_Plugin extends WP_UnitTestCase {
 		$action_id = as_schedule_single_action( time() + 900, $hook );
 
 		// Drop the cron event to simulate a freshly-installed plugin over an existing AS queue.
-		wp_clear_scheduled_hook( Plugin::RUN_ACTION_HOOK, array( $action_id ) );
-		$this->assertFalse( wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ) );
+		$this->clear_cron_for_action( $action_id );
+		$this->assertFalse( $this->next_cron_for_action( $action_id ) );
 
 		Plugin::instance()->sync_pending_actions();
 
 		$this->assertNotFalse(
-			wp_next_scheduled( Plugin::RUN_ACTION_HOOK, array( $action_id ) ),
+			$this->next_cron_for_action( $action_id ),
 			'sync_pending_actions should backfill cron events for existing pending actions.'
 		);
 	}
