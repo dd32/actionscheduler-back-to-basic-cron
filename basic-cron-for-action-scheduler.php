@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       Action Scheduler: Back to Basic Cron
+ * Plugin Name:       Basic Cron for Action Scheduler
  * Description:       Makes Action Scheduler schedule each action as its own WP-Cron event instead of running a periodic queue. Designed to play nicely with Cavalcade.
  * Version:           1.0.0
  * Requires at least: 6.0
@@ -9,10 +9,10 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  *
- * @package ActionScheduler_Back_To_Basic_Cron
+ * @package dd32\WordPress\BasicCronForActionScheduler
  */
 
-namespace ActionScheduler_Back_To_Basic_Cron;
+namespace dd32\WordPress\BasicCronForActionScheduler;
 
 use ActionScheduler;
 use ActionScheduler_Store;

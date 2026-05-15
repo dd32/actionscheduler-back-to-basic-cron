@@ -2,7 +2,7 @@
 /**
  * PHPUnit bootstrap file.
  *
- * @package ActionScheduler_Back_To_Basic_Cron
+ * @package dd32\WordPress\BasicCronForActionScheduler
  */
 
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
@@ -33,7 +33,7 @@ function _manually_load_plugin() {
 		}
 	}
 
-	require dirname( __DIR__ ) . '/actionscheduler-back-to-basic-cron.php';
+	require dirname( __DIR__ ) . '/basic-cron-for-action-scheduler.php';
 }
 tests_add_filter( 'muplugins_loaded', '_manually_load_plugin' );
 

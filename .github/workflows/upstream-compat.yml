@@ -9,52 +9,43 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      mysql:
-        image: mariadb:10.11
-        env:
-          MARIADB_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=10s --health-timeout=5s --health-retries=5
-
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v4
 
-      - name: Checkout upstream Action Scheduler trunk
-        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          repository: woocommerce/action-scheduler
-          ref: trunk
-          path: ../action-scheduler-upstream
-
-      - name: Move upstream into bootstrap-discoverable location
-        run: |
-          mv ../action-scheduler-upstream ../action-scheduler
-          cd ../action-scheduler && echo "UPSTREAM_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          node-version: '20'
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
           tools: composer
-          extensions: mysqli
 
-      - name: Install Subversion
-        run: sudo apt-get update && sudo apt-get install -y subversion
+      - name: Record upstream SHA
+        run: echo "UPSTREAM_SHA=$(git ls-remote https://github.com/woocommerce/action-scheduler.git refs/heads/trunk | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: Override wp-env to use upstream trunk
+        run: |
+          cat > .wp-env.override.json <<'JSON'
+          {
+            "plugins": [
+              "https://github.com/woocommerce/action-scheduler.git",
+              "."
+            ]
+          }
+          JSON
 
       - name: composer install
         run: composer install --no-interaction --no-progress
 
-      - name: Install WP test suite
-        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 latest
+      - name: Start wp-env
+        run: npx wp-env start
 
-      - name: Run PHPUnit
-        id: phpunit
-        run: composer test
+      - name: Run PHPUnit (in wp-env)
+        run: composer test:env
 
       - name: Open issue on failure
         if: failure() && github.event_name == 'schedule'

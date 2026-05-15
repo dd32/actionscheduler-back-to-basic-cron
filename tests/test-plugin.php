@@ -2,10 +2,10 @@
 /**
  * Integration tests for the plugin, run against a real Action Scheduler install.
  *
- * @package ActionScheduler_Back_To_Basic_Cron
+ * @package dd32\WordPress\BasicCronForActionScheduler
  */
 
-use ActionScheduler_Back_To_Basic_Cron\Plugin;
+use dd32\WordPress\BasicCronForActionScheduler\Plugin;
 
 class Test_Plugin extends WP_UnitTestCase {
 
