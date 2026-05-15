@@ -28,16 +28,14 @@ class Test_Plugin extends WP_UnitTestCase {
 		}
 
 		delete_option( Plugin::SYNCED_OPTION );
-
-		// Apply cleanup explicitly — in the test harness init has already fired.
-		Plugin::instance()->cleanup_default_cron();
 	}
 
 	public function test_default_queue_event_is_cleared() {
 		wp_schedule_event( time(), 'hourly', Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) );
 		$this->assertNotFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) ) );
 
-		Plugin::instance()->cleanup_default_cron();
+		delete_option( Plugin::SYNCED_OPTION );
+		Plugin::instance()->maybe_initial_sync();
 
 		$this->assertFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK, array( 'WP Cron' ) ) );
 		$this->assertFalse( wp_next_scheduled( Plugin::AS_QUEUE_HOOK ) );

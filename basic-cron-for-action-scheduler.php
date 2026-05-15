@@ -42,7 +42,6 @@ class Plugin {
 
 	public function init() {
 		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
-		add_action( 'init', array( $this, 'cleanup_default_cron' ), 2 );
 		add_action( 'action_scheduler_init', array( $this, 'maybe_initial_sync' ), 100 );
 
 		add_action( 'action_scheduler_stored_action', array( $this, 'on_stored_action' ) );
@@ -63,19 +62,6 @@ class Plugin {
 			return;
 		}
 		remove_action( 'init', array( ActionScheduler::runner(), 'init' ), 1 );
-	}
-
-	/**
-	 * Clear any periodic queue event AS may have registered previously, and detach
-	 * the async loopback dispatcher.
-	 */
-	public function cleanup_default_cron() {
-		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK, array( 'WP Cron' ) );
-		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK );
-
-		if ( class_exists( 'ActionScheduler' ) ) {
-			ActionScheduler::runner()->unhook_dispatch_async_request();
-		}
 	}
 
 	/**
@@ -153,6 +139,12 @@ class Plugin {
 		if ( get_option( self::SYNCED_OPTION ) ) {
 			return;
 		}
+
+		// Drop any periodic queue event AS had previously scheduled. Once cleared it stays
+		// cleared because disable_default_runner() stops AS re-registering it.
+		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK, array( 'WP Cron' ) );
+		wp_clear_scheduled_hook( self::AS_QUEUE_HOOK );
+
 		$this->sync_pending_actions();
 		update_option( self::SYNCED_OPTION, 1 );
 	}
