@@ -48,7 +48,10 @@ class Plugin {
 		add_action( 'plugins_loaded', array( $this, 'disable_default_runner' ), 20 );
 		add_action( 'action_scheduler_init', array( $this, 'defang_default_runner' ), 1 );
 		add_action( 'action_scheduler_init', array( $this, 'maybe_initial_sync' ), 100 );
-		add_filter( 'pre_schedule_event', array( $this, 'block_default_queue_schedule' ), 10, 2 );
+		// Priority 1 so we run before Cavalcade's pre_schedule_event handler (priority 10):
+		// if Cavalcade processed first, it would persist the event to its DB before our
+		// short-circuit could veto it.
+		add_filter( 'pre_schedule_event', array( $this, 'block_default_queue_schedule' ), 1, 2 );
 
 		add_action( 'action_scheduler_stored_action', array( $this, 'on_stored_action' ) );
 		add_action( 'action_scheduler_canceled_action', array( $this, 'on_removed_action' ) );
