@@ -1,0 +1,62 @@
+name: Integration (Action Scheduler + Cavalcade)
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+
+      - name: composer install
+        run: composer install --no-interaction --no-progress
+
+      - name: Override wp-env to include Cavalcade
+        run: cp tests/integration/wp-env.json .wp-env.override.json
+
+      - name: Start wp-env
+        run: npx -p @wordpress/env wp-env start
+
+      - name: Enable pcntl in tests-cli (Cavalcade's `wp cavalcade run` calls pcntl_signal)
+        run: |
+          CID=$(docker ps --filter name=tests-cli --format '{{.ID}}' | head -n1)
+          test -n "$CID" || { echo "tests-cli container not found"; docker ps; exit 1; }
+          echo "Installing pcntl into container $CID"
+          docker exec -u 0 "$CID" sh -lc 'docker-php-ext-install pcntl'
+
+      - name: Install Cavalcade's database schema
+        run: npx -p @wordpress/env wp-env run tests-cli wp cavalcade upgrade
+
+      - name: Phase 1 assertions (queue runner suppressed, Cavalcade job created)
+        run: npx -p @wordpress/env wp-env run tests-cli wp eval-file wp-content/plugins/basic-cron-for-action-scheduler/tests/integration/assertions.php
+
+      - name: Dispatch the Cavalcade job
+        run: |
+          JOB_ID=$(npx -p @wordpress/env wp-env run tests-cli wp option get bc4as_integration_job_id | tr -d '\r\n ')
+          test -n "$JOB_ID" || { echo "Failed to read staged job id"; exit 1; }
+          echo "Running Cavalcade job $JOB_ID"
+          npx -p @wordpress/env wp-env run tests-cli wp cavalcade run "$JOB_ID"
+
+      - name: Phase 2 assertions (AS action completed)
+        run: npx -p @wordpress/env wp-env run tests-cli wp eval-file wp-content/plugins/basic-cron-for-action-scheduler/tests/integration/verify-completion.php
+
+      - name: Dump wp-env logs on failure
+        if: failure()
+        run: timeout 30 npx -p @wordpress/env wp-env logs all || true

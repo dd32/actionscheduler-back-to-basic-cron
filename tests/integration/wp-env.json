@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    "https://downloads.wordpress.org/plugin/action-scheduler.zip",
+    "humanmade/Cavalcade",
+    "."
+  ],
+  "mappings": {
+    "wp-content/mu-plugins/bc4as-integration.php": "./tests/integration/mu-plugin.php"
+  }
+}

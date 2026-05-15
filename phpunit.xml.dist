@@ -11,6 +11,7 @@
 		<testsuite name="plugin">
 			<directory suffix=".php">./tests/</directory>
 			<exclude>./tests/bootstrap.php</exclude>
+			<exclude>./tests/integration</exclude>
 		</testsuite>
 	</testsuites>
 </phpunit>
